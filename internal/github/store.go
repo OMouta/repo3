@@ -109,6 +109,14 @@ func (s *Store) PutObject(ctx context.Context, bucket, key string, body io.Reade
 	if err := s.doJSON(ctx, http.MethodPut, s.contentsURL(bucket, key), reqBody, &out); err != nil {
 		return nil, err
 	}
+	sidecar := objectMetadata{
+		ContentType:  meta.ContentType,
+		ETag:         out.Content.SHA,
+		UserMetadata: meta.UserMetadata,
+	}
+	if err := s.putMetadata(ctx, bucket, key, sidecar); err != nil {
+		return nil, err
+	}
 	return &storage.PutResult{ETag: out.Content.SHA, VersionID: out.Commit.SHA}, nil
 }
 
@@ -131,6 +139,13 @@ func (s *Store) GetObject(ctx context.Context, bucket, key string, versionID str
 		LastModified: time.Now().UTC(),
 		VersionID:    versionID,
 	}
+	if meta, err := s.readMetadata(ctx, bucket, key, ref); err == nil {
+		info.ContentType = meta.ContentType
+		if meta.ETag != "" {
+			info.ETag = meta.ETag
+		}
+		info.UserMetadata = meta.UserMetadata
+	}
 
 	if content.DownloadURL != "" {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, content.DownloadURL, nil)
@@ -147,7 +162,10 @@ func (s *Store) GetObject(ctx context.Context, bucket, key string, versionID str
 			return nil, mapStatus(resp.StatusCode, data)
 		}
 		if resp.Header.Get("Content-Type") != "" {
-			info.ContentType = resp.Header.Get("Content-Type")
+			// Prefer explicit Repo3 metadata when present.
+			if info.ContentType == "" {
+				info.ContentType = resp.Header.Get("Content-Type")
+			}
 		}
 		return &storage.Object{Info: info, Body: resp.Body}, nil
 	}
@@ -181,7 +199,13 @@ func (s *Store) DeleteObject(ctx context.Context, bucket, key string) error {
 		Branch:  s.branch,
 	}
 	var out writeContentResponse
-	return s.doJSON(ctx, http.MethodDelete, s.contentsURL(bucket, key), reqBody, &out)
+	if err := s.doJSON(ctx, http.MethodDelete, s.contentsURL(bucket, key), reqBody, &out); err != nil {
+		return err
+	}
+	if err := s.deleteMetadata(ctx, bucket, key); err != nil && !errors.Is(err, storage.ErrNoSuchKey) {
+		return err
+	}
+	return nil
 }
 
 func (s *Store) ListObjects(ctx context.Context, bucket, prefix string, limit int) ([]storage.ObjectInfo, error) {
@@ -237,6 +261,70 @@ func (s *Store) repoExists(ctx context.Context, bucket string) bool {
 
 func (s *Store) contentsURL(bucket, key string) string {
 	return fmt.Sprintf("%s/repos/%s/%s/contents/%s", apiBase, url.PathEscape(s.owner), url.PathEscape(bucket), escapePath(key))
+}
+
+func (s *Store) putMetadata(ctx context.Context, bucket, key string, meta objectMetadata) error {
+	if meta.ContentType == "" && meta.ETag == "" && len(meta.UserMetadata) == 0 {
+		return nil
+	}
+
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	sidecarKey := metadataKey(key)
+	existing, err := s.getContent(ctx, bucket, sidecarKey, s.branch)
+	if err != nil && !errors.Is(err, storage.ErrNoSuchKey) {
+		return err
+	}
+
+	reqBody := putContentRequest{
+		Message: fmt.Sprintf("repo3: put metadata %s", key),
+		Content: base64.StdEncoding.EncodeToString(append(data, '\n')),
+		Branch:  s.branch,
+	}
+	if existing.SHA != "" {
+		reqBody.SHA = existing.SHA
+	}
+	var out writeContentResponse
+	return s.doJSON(ctx, http.MethodPut, s.contentsURL(bucket, sidecarKey), reqBody, &out)
+}
+
+func (s *Store) readMetadata(ctx context.Context, bucket, key, ref string) (objectMetadata, error) {
+	content, err := s.getContent(ctx, bucket, metadataKey(key), ref)
+	if err != nil {
+		return objectMetadata{}, err
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(content.Content, "\n", ""))
+	if err != nil {
+		return objectMetadata{}, err
+	}
+	var meta objectMetadata
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return objectMetadata{}, err
+	}
+	return meta, nil
+}
+
+func (s *Store) deleteMetadata(ctx context.Context, bucket, key string) error {
+	sidecarKey := metadataKey(key)
+	content, err := s.getContent(ctx, bucket, sidecarKey, s.branch)
+	if err != nil {
+		return err
+	}
+
+	reqBody := deleteContentRequest{
+		Message: fmt.Sprintf("repo3: delete metadata %s", key),
+		SHA:     content.SHA,
+		Branch:  s.branch,
+	}
+	var out writeContentResponse
+	return s.doJSON(ctx, http.MethodDelete, s.contentsURL(bucket, sidecarKey), reqBody, &out)
+}
+
+func metadataKey(key string) string {
+	return ".repo3/meta/" + strings.TrimPrefix(key, "/") + ".json"
 }
 
 func (s *Store) doJSON(ctx context.Context, method, url string, in any, out any) error {
@@ -384,4 +472,10 @@ type treeItem struct {
 	Type string `json:"type"`
 	SHA  string `json:"sha"`
 	Size int64  `json:"size"`
+}
+
+type objectMetadata struct {
+	ContentType  string            `json:"contentType,omitempty"`
+	ETag         string            `json:"etag,omitempty"`
+	UserMetadata map[string]string `json:"userMetadata,omitempty"`
 }

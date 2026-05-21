@@ -47,6 +47,7 @@ type ObjectInfo struct {
 	LastModified time.Time
 	ContentType  string
 	VersionID    string
+	UserMetadata map[string]string
 }
 
 type ObjectStore interface {

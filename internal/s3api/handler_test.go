@@ -58,6 +58,33 @@ func TestObjectLifecycle(t *testing.T) {
 	}
 }
 
+func TestPutObjectMetadataHeadersRoundTrip(t *testing.T) {
+	handler := NewHandler(storage.NewMemoryStore())
+	mustRequest(t, handler, http.MethodPut, "/memes", nil, http.StatusOK)
+
+	req := httptest.NewRequest(http.MethodPut, "/memes/cat.txt", strings.NewReader("meow"))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("x-amz-meta-owner", "idk")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put object status = %d, want %d; body %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodHead, "/memes/cat.txt", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("head object status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/plain" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := rec.Header().Get("x-amz-meta-owner"); got != "idk" {
+		t.Fatalf("x-amz-meta-owner = %q", got)
+	}
+}
+
 func TestListBucketsAndObjects(t *testing.T) {
 	handler := NewHandler(storage.NewMemoryStore())
 

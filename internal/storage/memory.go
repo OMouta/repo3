@@ -108,6 +108,7 @@ func (s *MemoryStore) PutObject(ctx context.Context, bucket, key string, body io
 			LastModified: now,
 			ContentType:  meta.ContentType,
 			VersionID:    versionID,
+			UserMetadata: cloneMap(meta.UserMetadata),
 		},
 	}
 	return &PutResult{ETag: etag, VersionID: versionID}, nil
@@ -213,4 +214,15 @@ func validKey(key string) bool {
 func md5Hex(data []byte) string {
 	sum := md5.Sum(data)
 	return hex.EncodeToString(sum[:])
+}
+
+func cloneMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }

@@ -176,6 +176,9 @@ func writeObjectHeaders(w http.ResponseWriter, info storage.ObjectInfo) {
 	if info.ContentType != "" {
 		w.Header().Set("Content-Type", info.ContentType)
 	}
+	for key, value := range info.UserMetadata {
+		w.Header().Set("x-amz-meta-"+key, value)
+	}
 	if info.VersionID != "" {
 		w.Header().Set("x-amz-version-id", info.VersionID)
 	}
