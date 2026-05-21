@@ -202,6 +202,8 @@ func writeMappedError(w http.ResponseWriter, r *http.Request, err error, key str
 		writeError(w, r, http.StatusTooManyRequests, "SlowDown", err.Error())
 	case errors.Is(err, storage.ErrOperationAborted):
 		writeError(w, r, http.StatusConflict, "OperationAborted", err.Error())
+	case errors.Is(err, storage.ErrValidation):
+		writeError(w, r, http.StatusBadRequest, "InvalidRequest", err.Error())
 	default:
 		writeError(w, r, http.StatusInternalServerError, "InternalError", err.Error())
 	}

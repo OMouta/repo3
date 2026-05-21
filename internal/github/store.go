@@ -18,13 +18,14 @@ import (
 	"repo3/internal/storage"
 )
 
-const apiBase = "https://api.github.com"
+const defaultAPIBase = "https://api.github.com"
 
 type Store struct {
-	token  string
-	owner  string
-	branch string
-	client *http.Client
+	token   string
+	owner   string
+	branch  string
+	apiBase string
+	client  *http.Client
 }
 
 func NewStore(token, owner, branch string) *Store {
@@ -32,20 +33,21 @@ func NewStore(token, owner, branch string) *Store {
 		branch = "main"
 	}
 	return &Store{
-		token:  token,
-		owner:  owner,
-		branch: branch,
-		client: &http.Client{Timeout: 30 * time.Second},
+		token:   token,
+		owner:   owner,
+		branch:  branch,
+		apiBase: defaultAPIBase,
+		client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 func (s *Store) ListBuckets(ctx context.Context) ([]storage.Bucket, error) {
 	var repos []repoResponse
-	if err := s.doJSON(ctx, http.MethodGet, apiBase+"/orgs/"+url.PathEscape(s.owner)+"/repos?per_page=100&type=all", nil, &repos); err != nil {
+	if err := s.doJSONPages(ctx, s.apiURL("/orgs/%s/repos?per_page=100&type=all", s.owner), &repos); err != nil {
 		if !errors.Is(err, storage.ErrNoSuchBucket) {
 			return nil, err
 		}
-		if err := s.doJSON(ctx, http.MethodGet, apiBase+"/users/"+url.PathEscape(s.owner)+"/repos?per_page=100&type=all", nil, &repos); err != nil {
+		if err := s.doJSONPages(ctx, s.apiURL("/users/%s/repos?per_page=100&type=all", s.owner), &repos); err != nil {
 			return nil, err
 		}
 	}
@@ -61,14 +63,14 @@ func (s *Store) ListBuckets(ctx context.Context) ([]storage.Bucket, error) {
 func (s *Store) CreateBucket(ctx context.Context, name string) error {
 	body := map[string]any{"name": name, "auto_init": true}
 	var out repoResponse
-	err := s.doJSON(ctx, http.MethodPost, apiBase+"/orgs/"+url.PathEscape(s.owner)+"/repos", body, &out)
+	err := s.doJSON(ctx, http.MethodPost, s.apiURL("/orgs/%s/repos", s.owner), body, &out)
 	if err == nil {
 		return nil
 	}
 	if !errors.Is(err, storage.ErrNoSuchBucket) {
 		return err
 	}
-	return s.doJSON(ctx, http.MethodPost, apiBase+"/user/repos", body, &out)
+	return s.doJSON(ctx, http.MethodPost, s.apiBase+"/user/repos", body, &out)
 }
 
 func (s *Store) DeleteBucket(ctx context.Context, name string) error {
@@ -209,28 +211,46 @@ func (s *Store) DeleteObject(ctx context.Context, bucket, key string) error {
 }
 
 func (s *Store) ListObjects(ctx context.Context, bucket, prefix string, limit int) ([]storage.ObjectInfo, error) {
-	var tree treeResponse
-	u := fmt.Sprintf("%s/repos/%s/%s/git/trees/%s?recursive=1", apiBase, url.PathEscape(s.owner), url.PathEscape(bucket), url.PathEscape(s.branch))
-	if err := s.doJSON(ctx, http.MethodGet, u, nil, &tree); err != nil {
+	trees, err := s.fetchTrees(ctx, bucket)
+	if err != nil {
 		return nil, err
 	}
 
 	out := make([]storage.ObjectInfo, 0)
-	for _, item := range tree.Tree {
-		if item.Type != "blob" || !strings.HasPrefix(item.Path, prefix) || strings.HasPrefix(item.Path, ".repo3/") {
-			continue
-		}
-		out = append(out, storage.ObjectInfo{
-			Bucket: bucket,
-			Key:    item.Path,
-			Size:   item.Size,
-			ETag:   item.SHA,
-		})
-		if limit > 0 && len(out) >= limit {
-			break
+	for _, tree := range trees {
+		for _, item := range tree.Tree {
+			if item.Type != "blob" || !strings.HasPrefix(item.Path, prefix) || strings.HasPrefix(item.Path, ".repo3/") {
+				continue
+			}
+			out = append(out, storage.ObjectInfo{
+				Bucket: bucket,
+				Key:    item.Path,
+				Size:   item.Size,
+				ETag:   item.SHA,
+			})
+			if limit > 0 && len(out) >= limit {
+				return out, nil
+			}
 		}
 	}
 	return out, nil
+}
+
+func (s *Store) fetchTrees(ctx context.Context, bucket string) ([]treeResponse, error) {
+	firstURL := s.apiURL("/repos/%s/%s/git/trees/%s?recursive=1", s.owner, bucket, s.branch)
+	trees := []treeResponse{}
+	nextURL := firstURL
+	for nextURL != "" {
+		var tree treeResponse
+		resp, err := s.doJSONResponse(ctx, http.MethodGet, nextURL, nil, &tree)
+		if err != nil {
+			return nil, err
+		}
+		trees = append(trees, tree)
+		nextURL = nextLink(resp.Header.Get("Link"))
+		resp.Body.Close()
+	}
+	return trees, nil
 }
 
 func (s *Store) getContent(ctx context.Context, bucket, key, ref string) (contentResponse, error) {
@@ -255,12 +275,12 @@ func (s *Store) getContent(ctx context.Context, bucket, key, ref string) (conten
 
 func (s *Store) repoExists(ctx context.Context, bucket string) bool {
 	var out repoResponse
-	u := fmt.Sprintf("%s/repos/%s/%s", apiBase, url.PathEscape(s.owner), url.PathEscape(bucket))
+	u := s.apiURL("/repos/%s/%s", s.owner, bucket)
 	return s.doJSON(ctx, http.MethodGet, u, nil, &out) == nil
 }
 
 func (s *Store) contentsURL(bucket, key string) string {
-	return fmt.Sprintf("%s/repos/%s/%s/contents/%s", apiBase, url.PathEscape(s.owner), url.PathEscape(bucket), escapePath(key))
+	return s.apiURL("/repos/%s/%s/contents/%s", s.owner, bucket, key)
 }
 
 func (s *Store) putMetadata(ctx context.Context, bucket, key string, meta objectMetadata) error {
@@ -328,18 +348,27 @@ func metadataKey(key string) string {
 }
 
 func (s *Store) doJSON(ctx context.Context, method, url string, in any, out any) error {
+	resp, err := s.doJSONResponse(ctx, method, url, in, out)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+func (s *Store) doJSONResponse(ctx context.Context, method, url string, in any, out any) (*http.Response, error) {
 	var body io.Reader
 	if in != nil {
 		buf, err := json.Marshal(in)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		body = bytes.NewReader(buf)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -352,44 +381,99 @@ func (s *Store) doJSON(ctx context.Context, method, url string, in any, out any)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return mapStatus(resp.StatusCode, data)
+		resp.Body.Close()
+		return nil, mapStatus(resp.StatusCode, data)
 	}
 	if out == nil || resp.StatusCode == http.StatusNoContent {
-		return nil
+		return resp, nil
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		resp.Body.Close()
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (s *Store) doJSONPages(ctx context.Context, firstURL string, out *[]repoResponse) error {
+	nextURL := firstURL
+	for nextURL != "" {
+		var page []repoResponse
+		resp, err := s.doJSONResponse(ctx, http.MethodGet, nextURL, nil, &page)
+		if err != nil {
+			return err
+		}
+		*out = append(*out, page...)
+		nextURL = nextLink(resp.Header.Get("Link"))
+		resp.Body.Close()
+	}
+	return nil
 }
 
 func mapStatus(status int, body []byte) error {
-	message := githubMessage(body)
+	detail := githubErrorMessage(body)
 	switch status {
 	case http.StatusNotFound:
 		return storage.ErrNoSuchBucket
-	case http.StatusConflict, http.StatusUnprocessableEntity:
-		return fmt.Errorf("%w: %s", storage.ErrOperationAborted, messageOrDefault(message, "GitHub rejected the write."))
+	case http.StatusConflict:
+		return fmt.Errorf("%w: %s", storage.ErrOperationAborted, messageOrDefault(detail, "GitHub rejected the write."))
+	case http.StatusUnprocessableEntity:
+		return mapValidation(detail)
 	case http.StatusForbidden, http.StatusUnauthorized:
-		return fmt.Errorf("%w: %s", storage.ErrAccessDenied, messageOrDefault(message, "GitHub rejected the token or repository permission."))
+		return fmt.Errorf("%w: %s", storage.ErrAccessDenied, messageOrDefault(detail, "GitHub rejected the token or repository permission."))
 	case http.StatusTooManyRequests:
-		return fmt.Errorf("%w: %s", storage.ErrSlowDown, messageOrDefault(message, "GitHub rate limit exceeded."))
+		return fmt.Errorf("%w: %s", storage.ErrSlowDown, messageOrDefault(detail, "GitHub rate limit exceeded."))
 	default:
-		return fmt.Errorf("github request failed with status %d: %s", status, message)
+		return fmt.Errorf("github request failed with status %d: %s", status, detail)
 	}
 }
 
-func githubMessage(body []byte) string {
-	var parsed struct {
-		Message string `json:"message"`
+func mapValidation(detail string) error {
+	lower := strings.ToLower(detail)
+	switch {
+	case strings.Contains(lower, "code=already_exists"):
+		return fmt.Errorf("%w: %s", storage.ErrBucketExists, messageOrDefault(detail, "GitHub repository already exists."))
+	case strings.Contains(lower, "field=name") || strings.Contains(lower, "name already exists"):
+		return fmt.Errorf("%w: %s", storage.ErrInvalidBucketName, messageOrDefault(detail, "GitHub rejected the repository name."))
+	case strings.Contains(lower, "field=path"):
+		return fmt.Errorf("%w: %s", storage.ErrInvalidKey, messageOrDefault(detail, "GitHub rejected the object key."))
+	default:
+		return fmt.Errorf("%w: %s", storage.ErrValidation, messageOrDefault(detail, "GitHub validation failed."))
 	}
+}
+
+func githubErrorMessage(body []byte) string {
+	var parsed githubErrorResponse
 	if len(body) == 0 || json.Unmarshal(body, &parsed) != nil {
 		return strings.TrimSpace(string(body))
 	}
-	return parsed.Message
+	parts := []string{}
+	if parsed.Message != "" {
+		parts = append(parts, parsed.Message)
+	}
+	for _, item := range parsed.Errors {
+		fields := []string{}
+		if item.Resource != "" {
+			fields = append(fields, "resource="+item.Resource)
+		}
+		if item.Field != "" {
+			fields = append(fields, "field="+item.Field)
+		}
+		if item.Code != "" {
+			fields = append(fields, "code="+item.Code)
+		}
+		if item.Message != "" {
+			fields = append(fields, "message="+item.Message)
+		}
+		if len(fields) > 0 {
+			parts = append(parts, strings.Join(fields, " "))
+		}
+	}
+	return strings.Join(parts, "; ")
 }
 
 func messageOrDefault(message, fallback string) string {
@@ -425,6 +509,33 @@ func escapePath(p string) string {
 		parts[i] = url.PathEscape(part)
 	}
 	return strings.Join(parts, "/")
+}
+
+func (s *Store) apiURL(format string, args ...string) string {
+	escaped := make([]any, len(args))
+	for i, arg := range args {
+		if strings.Contains(arg, "/") && i == len(args)-1 && strings.Contains(format, "/contents/%s") {
+			escaped[i] = escapePath(arg)
+			continue
+		}
+		escaped[i] = url.PathEscape(arg)
+	}
+	return s.apiBase + fmt.Sprintf(format, escaped...)
+}
+
+func nextLink(header string) string {
+	for _, part := range strings.Split(header, ",") {
+		section := strings.TrimSpace(part)
+		if !strings.Contains(section, `rel="next"`) {
+			continue
+		}
+		start := strings.Index(section, "<")
+		end := strings.Index(section, ">")
+		if start >= 0 && end > start {
+			return section[start+1 : end]
+		}
+	}
+	return ""
 }
 
 type repoResponse struct {
@@ -478,4 +589,16 @@ type objectMetadata struct {
 	ContentType  string            `json:"contentType,omitempty"`
 	ETag         string            `json:"etag,omitempty"`
 	UserMetadata map[string]string `json:"userMetadata,omitempty"`
+}
+
+type githubErrorResponse struct {
+	Message string            `json:"message"`
+	Errors  []githubErrorItem `json:"errors"`
+}
+
+type githubErrorItem struct {
+	Resource string `json:"resource"`
+	Field    string `json:"field"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
 }

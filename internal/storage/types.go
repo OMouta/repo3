@@ -17,6 +17,7 @@ var (
 	ErrAccessDenied      = errors.New("access denied")
 	ErrSlowDown          = errors.New("slow down")
 	ErrOperationAborted  = errors.New("operation aborted")
+	ErrValidation        = errors.New("validation failed")
 )
 
 type Bucket struct {
