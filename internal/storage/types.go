@@ -14,6 +14,9 @@ var (
 	ErrBucketNotEmpty    = errors.New("bucket not empty")
 	ErrInvalidBucketName = errors.New("invalid bucket name")
 	ErrInvalidKey        = errors.New("invalid key")
+	ErrAccessDenied      = errors.New("access denied")
+	ErrSlowDown          = errors.New("slow down")
+	ErrOperationAborted  = errors.New("operation aborted")
 )
 
 type Bucket struct {

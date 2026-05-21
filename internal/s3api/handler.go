@@ -87,7 +87,8 @@ func (h *Handler) deleteBucket(w http.ResponseWriter, r *http.Request, bucket st
 
 func (h *Handler) putObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
 	result, err := h.store.PutObject(r.Context(), bucket, key, r.Body, storage.Metadata{
-		ContentType: r.Header.Get("Content-Type"),
+		ContentType:  r.Header.Get("Content-Type"),
+		UserMetadata: userMetadataFromHeaders(r.Header),
 	})
 	if err != nil {
 		writeMappedError(w, r, err, key)
@@ -98,6 +99,25 @@ func (h *Handler) putObject(w http.ResponseWriter, r *http.Request, bucket, key 
 		w.Header().Set("x-amz-version-id", result.VersionID)
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func userMetadataFromHeaders(headers http.Header) map[string]string {
+	const prefix = "X-Amz-Meta-"
+	meta := map[string]string{}
+	for key, values := range headers {
+		if !strings.HasPrefix(http.CanonicalHeaderKey(key), prefix) || len(values) == 0 {
+			continue
+		}
+		metaKey := strings.TrimPrefix(http.CanonicalHeaderKey(key), prefix)
+		if metaKey == "" {
+			continue
+		}
+		meta[strings.ToLower(metaKey)] = values[0]
+	}
+	if len(meta) == 0 {
+		return nil
+	}
+	return meta
 }
 
 func (h *Handler) getObject(w http.ResponseWriter, r *http.Request, bucket, key string) {
@@ -173,6 +193,12 @@ func writeMappedError(w http.ResponseWriter, r *http.Request, err error, key str
 		writeErrorWithKey(w, r, http.StatusBadRequest, "InvalidKey", "The specified key is not valid.", key)
 	case errors.Is(err, storage.ErrBucketNotEmpty):
 		writeError(w, r, http.StatusConflict, "BucketNotEmpty", "The bucket you tried to delete is not empty.")
+	case errors.Is(err, storage.ErrAccessDenied):
+		writeError(w, r, http.StatusForbidden, "AccessDenied", err.Error())
+	case errors.Is(err, storage.ErrSlowDown):
+		writeError(w, r, http.StatusTooManyRequests, "SlowDown", err.Error())
+	case errors.Is(err, storage.ErrOperationAborted):
+		writeError(w, r, http.StatusConflict, "OperationAborted", err.Error())
 	default:
 		writeError(w, r, http.StatusInternalServerError, "InternalError", err.Error())
 	}

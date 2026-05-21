@@ -97,7 +97,7 @@ func (s *Store) PutObject(ctx context.Context, bucket, key string, body io.Reade
 	}
 
 	reqBody := putContentRequest{
-		Message: fmt.Sprintf("repo3: put object %s\n\nBucket: %s\nKey: %s\nContent-Type: %s", key, bucket, key, meta.ContentType),
+		Message: commitMessage("put", bucket, key, meta),
 		Content: base64.StdEncoding.EncodeToString(data),
 		Branch:  s.branch,
 	}
@@ -142,8 +142,9 @@ func (s *Store) GetObject(ctx context.Context, bucket, key string, versionID str
 			return nil, err
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 			resp.Body.Close()
-			return nil, mapStatus(resp.StatusCode)
+			return nil, mapStatus(resp.StatusCode, data)
 		}
 		if resp.Header.Get("Content-Type") != "" {
 			info.ContentType = resp.Header.Get("Content-Type")
@@ -268,7 +269,8 @@ func (s *Store) doJSON(ctx context.Context, method, url string, in any, out any)
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return mapStatus(resp.StatusCode)
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return mapStatus(resp.StatusCode, data)
 	}
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
@@ -276,17 +278,56 @@ func (s *Store) doJSON(ctx context.Context, method, url string, in any, out any)
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func mapStatus(status int) error {
+func mapStatus(status int, body []byte) error {
+	message := githubMessage(body)
 	switch status {
 	case http.StatusNotFound:
 		return storage.ErrNoSuchBucket
 	case http.StatusConflict, http.StatusUnprocessableEntity:
-		return storage.ErrBucketExists
-	case http.StatusForbidden, http.StatusTooManyRequests:
-		return fmt.Errorf("github request throttled or forbidden")
+		return fmt.Errorf("%w: %s", storage.ErrOperationAborted, messageOrDefault(message, "GitHub rejected the write."))
+	case http.StatusForbidden, http.StatusUnauthorized:
+		return fmt.Errorf("%w: %s", storage.ErrAccessDenied, messageOrDefault(message, "GitHub rejected the token or repository permission."))
+	case http.StatusTooManyRequests:
+		return fmt.Errorf("%w: %s", storage.ErrSlowDown, messageOrDefault(message, "GitHub rate limit exceeded."))
 	default:
-		return fmt.Errorf("github request failed with status %d", status)
+		return fmt.Errorf("github request failed with status %d: %s", status, message)
 	}
+}
+
+func githubMessage(body []byte) string {
+	var parsed struct {
+		Message string `json:"message"`
+	}
+	if len(body) == 0 || json.Unmarshal(body, &parsed) != nil {
+		return strings.TrimSpace(string(body))
+	}
+	return parsed.Message
+}
+
+func messageOrDefault(message, fallback string) string {
+	if strings.TrimSpace(message) == "" {
+		return fallback
+	}
+	return message
+}
+
+func commitMessage(action, bucket, key string, meta storage.Metadata) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "repo3: %s object %s\n\nBucket: %s\nKey: %s", action, key, bucket, key)
+	if meta.ContentType != "" {
+		fmt.Fprintf(&b, "\nContent-Type: %s", meta.ContentType)
+	}
+	if len(meta.UserMetadata) > 0 {
+		keys := make([]string, 0, len(meta.UserMetadata))
+		for key := range meta.UserMetadata {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fmt.Fprintf(&b, "\nMetadata-%s: %s", key, meta.UserMetadata[key])
+		}
+	}
+	return b.String()
 }
 
 func escapePath(p string) string {

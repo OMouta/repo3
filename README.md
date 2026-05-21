@@ -125,11 +125,39 @@ Not recommended for:
 
 ## Running
 
+Create a local `.env` file:
+
+```env
+GITHUB_TOKEN=github_pat_your_token
+REPO3_OWNER=your-org
+REPO3_PORT=9000
+```
+
+Then start the server:
+
+```bash
+repo3 serve
+```
+
+You can still override values with flags:
+
 ```bash
 repo3 serve \
   --github-token $GITHUB_TOKEN \
   --owner your-org \
   --addr :9000
+```
+
+Supported server environment keys:
+
+```env
+GITHUB_TOKEN=github_pat_your_token
+REPO3_OWNER=your-org
+REPO3_ADDR=:9000
+REPO3_PORT=9000
+REPO3_DEFAULT_BRANCH=main
+REPO3_ACCESS_KEY=repo3
+REPO3_SECRET_KEY=devsecret
 ```
 
 ---
