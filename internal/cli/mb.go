@@ -16,7 +16,8 @@ func (c command) runMB(args []string) error {
 		return err
 	}
 	if !opts.json {
-		fmt.Fprintf(c.stdout, "created bucket %s\n", bucket)
+		_, err := fmt.Fprintf(c.stdout, "created bucket %s\n", bucket)
+		return err
 	}
 	return nil
 }

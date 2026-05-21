@@ -33,9 +33,13 @@ func (c command) runLS(args []string) error {
 	}
 
 	tw := tabwriter.NewWriter(c.stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "SIZE\tLAST MODIFIED\tKEY")
+	if _, err := fmt.Fprintln(tw, "SIZE\tLAST MODIFIED\tKEY"); err != nil {
+		return err
+	}
 	for _, obj := range objects {
-		fmt.Fprintf(tw, "%d\t%s\t%s\n", obj.Size, obj.LastModified.Format("2006-01-02 15:04"), obj.Key)
+		if _, err := fmt.Fprintf(tw, "%d\t%s\t%s\n", obj.Size, obj.LastModified.Format("2006-01-02 15:04"), obj.Key); err != nil {
+			return err
+		}
 	}
 	return tw.Flush()
 }

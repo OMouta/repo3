@@ -53,7 +53,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 }
 
 func (c command) usage() {
-	fmt.Fprintln(c.stderr, "usage: repo3 <serve|mb|put|get|ls|rm> [flags]")
+	_, _ = fmt.Fprintln(c.stderr, "usage: repo3 <serve|mb|put|get|ls|rm> [flags]")
 }
 
 func (c command) parseClientFlags(name string, args []string) (*flag.FlagSet, globalOptions, error) {

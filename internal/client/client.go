@@ -42,8 +42,7 @@ func (c *Client) CreateBucket(ctx context.Context, bucket string) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return errorFromResponse(resp)
 	}
-	resp.Body.Close()
-	return nil
+	return resp.Body.Close()
 }
 
 func (c *Client) PutObject(ctx context.Context, bucket string, key string, body io.Reader, size int64, opts PutOptions) error {
@@ -65,8 +64,7 @@ func (c *Client) PutObject(ctx context.Context, bucket string, key string, body 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return errorFromResponse(resp)
 	}
-	resp.Body.Close()
-	return nil
+	return resp.Body.Close()
 }
 
 func (c *Client) GetObject(ctx context.Context, bucket string, key string) (*http.Response, error) {
@@ -96,8 +94,7 @@ func (c *Client) DeleteObject(ctx context.Context, bucket string, key string) er
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return errorFromResponse(resp)
 	}
-	resp.Body.Close()
-	return nil
+	return resp.Body.Close()
 }
 
 func (c *Client) ListObjects(ctx context.Context, bucket string, prefix string) ([]ObjectInfo, error) {
@@ -117,7 +114,7 @@ func (c *Client) ListObjects(ctx context.Context, bucket string, prefix string) 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, errorFromResponse(resp)
 	}
-	defer resp.Body.Close()
+	defer closeIgnore(resp.Body)
 
 	var parsed struct {
 		Contents []struct {

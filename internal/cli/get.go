@@ -29,19 +29,23 @@ func (c command) runGet(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeIgnore(resp.Body)
 
 	out, err := os.Create(fs.Arg(1))
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 	if _, err := io.Copy(out, resp.Body); err != nil {
+		_ = out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
 		return err
 	}
 
 	if !opts.json {
-		fmt.Fprintf(c.stdout, "downloaded %s to %s\n", fs.Arg(0), fs.Arg(1))
+		_, err := fmt.Fprintf(c.stdout, "downloaded %s to %s\n", fs.Arg(0), fs.Arg(1))
+		return err
 	}
 	return nil
 }

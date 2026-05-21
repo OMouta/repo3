@@ -160,7 +160,7 @@ func (s *Store) GetObject(ctx context.Context, bucket, key string, versionID str
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-			resp.Body.Close()
+			closeIgnore(resp.Body)
 			return nil, mapStatus(resp.StatusCode, data)
 		}
 		if resp.Header.Get("Content-Type") != "" {
@@ -185,7 +185,7 @@ func (s *Store) HeadObject(ctx context.Context, bucket, key string, versionID st
 	if err != nil {
 		return nil, err
 	}
-	defer obj.Body.Close()
+	defer closeIgnore(obj.Body)
 	return &obj.Info, nil
 }
 
@@ -248,7 +248,7 @@ func (s *Store) fetchTrees(ctx context.Context, bucket string) ([]treeResponse, 
 		}
 		trees = append(trees, tree)
 		nextURL = nextLink(resp.Header.Get("Link"))
-		resp.Body.Close()
+		closeIgnore(resp.Body)
 	}
 	return trees, nil
 }
@@ -352,7 +352,7 @@ func (s *Store) doJSON(ctx context.Context, method, url string, in any, out any)
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	closeIgnore(resp.Body)
 	return nil
 }
 
@@ -386,14 +386,14 @@ func (s *Store) doJSONResponse(ctx context.Context, method, url string, in any, 
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		resp.Body.Close()
+		closeIgnore(resp.Body)
 		return nil, mapStatus(resp.StatusCode, data)
 	}
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return resp, nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		resp.Body.Close()
+		closeIgnore(resp.Body)
 		return nil, err
 	}
 	return resp, nil
@@ -409,7 +409,7 @@ func (s *Store) doJSONPages(ctx context.Context, firstURL string, out *[]repoRes
 		}
 		*out = append(*out, page...)
 		nextURL = nextLink(resp.Header.Get("Link"))
-		resp.Body.Close()
+		closeIgnore(resp.Body)
 	}
 	return nil
 }

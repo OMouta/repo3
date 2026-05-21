@@ -69,7 +69,8 @@ func (c command) runPut(args []string) error {
 			return err
 		}
 		if !opts.json {
-			fmt.Fprintf(c.stdout, "uploaded %s to %s\n", localPath, fs.Arg(1))
+			_, err := fmt.Fprintf(c.stdout, "uploaded %s to %s\n", localPath, fs.Arg(1))
+			return err
 		}
 		return nil
 	}
@@ -88,7 +89,8 @@ func (c command) runPut(args []string) error {
 		return err
 	}
 	if !opts.json {
-		fmt.Fprintf(c.stdout, "uploaded %s to %s\n", localPath, fs.Arg(1))
+		_, err := fmt.Fprintf(c.stdout, "uploaded %s to %s\n", localPath, fs.Arg(1))
+		return err
 	}
 	return nil
 }
@@ -98,7 +100,7 @@ func (c command) uploadFile(cli *client.Client, localPath string, s3Path client.
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer closeIgnore(file)
 
 	info, err := file.Stat()
 	if err != nil {
@@ -162,9 +164,7 @@ func (m metadataFlags) Map() (map[string]string, error) {
 			return nil, fmt.Errorf("invalid --meta %q: expected key=value", raw)
 		}
 		key = strings.TrimSpace(strings.ToLower(key))
-		if strings.HasPrefix(key, "x-amz-meta-") {
-			key = strings.TrimPrefix(key, "x-amz-meta-")
-		}
+		key = strings.TrimPrefix(key, "x-amz-meta-")
 		if strings.ContainsAny(key, " \t\r\n:") {
 			return nil, fmt.Errorf("invalid --meta key %q", key)
 		}

@@ -126,7 +126,7 @@ func (h *Handler) getObject(w http.ResponseWriter, r *http.Request, bucket, key 
 		writeMappedError(w, r, err, key)
 		return
 	}
-	defer obj.Body.Close()
+	defer closeIgnore(obj.Body)
 	writeObjectHeaders(w, obj.Info)
 	_, _ = io.Copy(w, obj.Body)
 }
