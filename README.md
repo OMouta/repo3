@@ -3,9 +3,9 @@
   <h1>Repo3</h1>
 </div>
 
-> Highly reliable S3-compatible object storage powered entirely by GitHub repositories. 100% uptime, 0% chance of rollback incidents.
+Highly reliable S3-compatible object storage powered entirely by GitHub repositories. 100% uptime, 0% chance of rollback incidents.
 
-Repo3 is an experimental S3-compatible object storage gateway built on top of GitHub repositories.
+> “Finally, object storage with commit history.”
 
 ---
 
@@ -162,6 +162,47 @@ REPO3_DEFAULT_BRANCH=main
 REPO3_ACCESS_KEY=repo3
 REPO3_SECRET_KEY=devsecret
 ```
+
+---
+
+## Docker
+
+Repo3 is fully containerized for modern cloud-native deployment workflows because every enterprise storage platform needs a Docker image.
+
+Pull the official image from GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/omouta/repo3:latest
+```
+
+Run your globally distributed object storage platform:
+
+```bash
+docker run --rm \
+  --env-file .env \
+  -p 9000:9000 \
+  ghcr.io/omouta/repo3:latest
+```
+
+Your production-ready object storage cluster is now operational.
+
+### Compose
+
+For highly available enterprise deployments:
+
+```bash
+docker compose up --build
+```
+
+### Container features
+
+* OCI-compliant
+* Cloud-native
+* GitOps-compatible
+* Horizontally questionable
+* Enterprise-adjacent
+* Commit-backed persistence
+* Kubernetes-ready for absolutely no reason
 
 ---
 

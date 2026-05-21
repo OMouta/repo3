@@ -1,0 +1,11 @@
+services:
+  repo3:
+    image: ghcr.io/omouta/repo3:latest
+    build:
+      context: .
+    ports:
+      - "9000:9000"
+    env_file:
+      - .env
+    environment:
+      REPO3_ADDR: ":9000"
