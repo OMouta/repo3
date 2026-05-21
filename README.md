@@ -1,6 +1,19 @@
 <div align="center">
   <img src="./assets/Repo3.png" alt="Repo3 Logo" width="200" />
   <h1>Repo3</h1>
+
+  <p>
+    <a href="https://github.com/OMouta/repo3/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/OMouta/repo3/actions/workflows/ci.yml/badge.svg" /></a>
+    <a href="https://github.com/OMouta/repo3/actions/workflows/docker.yml"><img alt="Docker" src="https://github.com/OMouta/repo3/actions/workflows/docker.yml/badge.svg" /></a>
+    <a href="https://github.com/OMouta/repo3/pkgs/container/repo3"><img alt="GHCR" src="https://img.shields.io/badge/ghcr.io-omouta%2Frepo3-blue?logo=github" /></a>
+    <a href="https://github.com/OMouta/repo3/releases"><img alt="Release" src="https://img.shields.io/github/v/release/OMouta/repo3?display_name=tag" /></a>
+    <a href="https://github.com/OMouta/repo3/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/OMouta/repo3" /></a>
+    <img alt="Go Version" src="https://img.shields.io/github/go-mod/go-version/OMouta/repo3" />
+    <img alt="Repo Size" src="https://img.shields.io/github/repo-size/OMouta/repo3" />
+    <img alt="Last Commit" src="https://img.shields.io/github/last-commit/OMouta/repo3" />
+    <img alt="Issues" src="https://img.shields.io/github/issues/OMouta/repo3" />
+    <img alt="Pull Requests" src="https://img.shields.io/github/issues-pr/OMouta/repo3" />
+  </p>
 </div>
 
 Highly reliable S3-compatible object storage powered entirely by GitHub repositories. 100% uptime, 0% chance of rollback incidents.
