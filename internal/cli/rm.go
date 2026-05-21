@@ -26,7 +26,8 @@ func (c command) runRM(args []string) error {
 		return err
 	}
 	if !opts.json {
-		fmt.Fprintf(c.stdout, "deleted %s\n", fs.Arg(0))
+		_, err := fmt.Fprintf(c.stdout, "deleted %s\n", fs.Arg(0))
+		return err
 	}
 	return nil
 }

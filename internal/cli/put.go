@@ -123,7 +123,9 @@ func (c command) shouldCreateBucket(mode createMode, bucket string) (bool, error
 		if !isTerminal() {
 			return false, nil
 		}
-		fmt.Fprintf(c.stderr, "Bucket '%s' does not exist.\nCreate GitHub repository '%s'? [y/N] ", bucket, bucket)
+		if _, err := fmt.Fprintf(c.stderr, "Bucket '%s' does not exist.\nCreate GitHub repository '%s'? [y/N] ", bucket, bucket); err != nil {
+			return false, err
+		}
 		answer, err := bufio.NewReader(c.stdin).ReadString('\n')
 		if err != nil {
 			return false, err

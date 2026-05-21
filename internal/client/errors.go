@@ -30,7 +30,7 @@ func IsCode(err error, code string) bool {
 }
 
 func errorFromResponse(resp *http.Response) error {
-	defer resp.Body.Close()
+	defer closeIgnore(resp.Body)
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {

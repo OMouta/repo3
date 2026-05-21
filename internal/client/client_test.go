@@ -58,7 +58,7 @@ func TestClientHTTPMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
+	closeIgnore(resp.Body)
 	if err := c.DeleteObject(ctx, "memes", "images/cat.txt"); err != nil {
 		t.Fatal(err)
 	}
