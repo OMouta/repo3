@@ -1,4 +1,7 @@
-# Repo3
+<div align="center">
+  <img src="./assets/Repo3.png" alt="Repo3 Logo" width="200" />
+  <h1>Repo3</h1>
+</div>
 
 > Highly reliable S3-compatible object storage powered entirely by GitHub repositories. 100% uptime, 0% chance of rollback incidents.
 
